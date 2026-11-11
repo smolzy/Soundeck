@@ -1,15 +1,163 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-class HomeScreen extends StatelessWidget {
+import '../services/audio_recorder_service.dart';
+
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final AudioRecorderService _audioRecorderService = AudioRecorderService();
+  Timer? _recordingTimer;
+  Duration _elapsed = Duration.zero;
+  bool _isRecording = false;
+  bool _isBusy = false;
+  String? _recordedPath;
+  String? _errorMessage;
+
+  Future<void> _toggleRecording() async {
+    if (_isBusy) {
+      return;
+    }
+
+    if (_isRecording) {
+      await _stopRecording();
+    } else {
+      await _startRecording();
+    }
+  }
+
+  Future<void> _startRecording() async {
+    setState(() {
+      _isBusy = true;
+      _errorMessage = null;
+      _recordedPath = null;
+    });
+
+    try {
+      await _audioRecorderService.start();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isRecording = true;
+        _isBusy = false;
+        _elapsed = Duration.zero;
+      });
+      _recordingTimer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (_) => _updateRecordingProgress(),
+      );
+    } on AudioPermissionDeniedException catch (error) {
+      _showError(error.toString());
+    } on PlatformException catch (error) {
+      _showError('Impossible de démarrer le microphone : ${error.message}');
+    } on FileSystemException catch (error) {
+      _showError('Impossible de préparer le fichier audio : ${error.message}');
+    } on StateError catch (error) {
+      _showError(error.message);
+    } finally {
+      if (mounted && !_isRecording) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    setState(() {
+      _isBusy = true;
+    });
+
+    try {
+      final path = await _audioRecorderService.stop();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isRecording = false;
+        _isBusy = false;
+        _recordedPath = path;
+        _elapsed = Duration.zero;
+      });
+    } on RecordingTooShortException catch (error) {
+      _showError(error.toString());
+    } on PlatformException catch (error) {
+      _showError('Impossible d’arrêter le microphone : ${error.message}');
+    } on FileSystemException catch (error) {
+      _showError('Impossible de finaliser le fichier audio : ${error.message}');
+    } on StateError catch (error) {
+      _showError(error.message);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  void _updateRecordingProgress() {
+    if (!mounted || !_isRecording) {
+      return;
+    }
+
+    final elapsed = _elapsed + const Duration(milliseconds: 100);
+    setState(() {
+      _elapsed = elapsed;
+    });
+
+    if (elapsed >= AudioRecorderService.maxDuration) {
+      unawaited(_stopRecording());
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _errorMessage = message;
+      _isRecording = false;
+      _isBusy = false;
+      _elapsed = Duration.zero;
+    });
+  }
+
+  String _formatDuration(Duration duration) {
+    final seconds = duration.inSeconds.toString().padLeft(2, '0');
+    return '00:$seconds';
+  }
+
+  @override
+  void dispose() {
+    _recordingTimer?.cancel();
+    unawaited(_audioRecorderService.dispose());
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final progress =
+        _elapsed.inMilliseconds /
+        AudioRecorderService.maxDuration.inMilliseconds;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('SoundDex'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('SoundDex'), centerTitle: true),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -23,16 +171,44 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                'Découvre les sons autour de toi',
+                _isRecording
+                    ? 'Écoute le son autour de toi'
+                    : 'Découvre les sons autour de toi',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 32),
+              if (_isRecording) ...[
+                Text(
+                  _formatDuration(_elapsed),
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0).toDouble(),
+                ),
+                const SizedBox(height: 24),
+              ],
               FilledButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.mic),
-                label: const Text('Écouter'),
+                onPressed: _isBusy ? null : _toggleRecording,
+                icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+                label: Text(_isRecording ? 'Arrêter' : 'Écouter'),
               ),
+              if (_recordedPath != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Enregistrement prêt',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
             ],
           ),
         ),
