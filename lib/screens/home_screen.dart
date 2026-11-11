@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../services/audio_recorder_service.dart';
+import '../services/yamnet_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,12 +16,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AudioRecorderService _audioRecorderService = AudioRecorderService();
+  final YamnetService _yamnetService = YamnetService();
   Timer? _recordingTimer;
   Duration _elapsed = Duration.zero;
   bool _isRecording = false;
   bool _isBusy = false;
   String? _recordedPath;
   String? _errorMessage;
+  List<YamnetPrediction>? _predictions;
 
   Future<void> _toggleRecording() async {
     if (_isBusy) {
@@ -39,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isBusy = true;
       _errorMessage = null;
       _recordedPath = null;
+      _predictions = null;
     });
 
     try {
@@ -80,30 +84,53 @@ class _HomeScreenState extends State<HomeScreen> {
       _isBusy = true;
     });
 
+    String path;
     try {
-      final path = await _audioRecorderService.stop();
+      path = await _audioRecorderService.stop();
+    } on RecordingTooShortException catch (error) {
+      _showError(error.toString());
+      return;
+    } on PlatformException catch (error) {
+      _showError('Impossible d’arrêter le microphone : ${error.message}');
+      return;
+    } on FileSystemException catch (error) {
+      _showError('Impossible de finaliser le fichier audio : ${error.message}');
+      return;
+    } on StateError catch (error) {
+      _showError(error.message);
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isRecording = false;
+      _recordedPath = path;
+      _predictions = null;
+      _elapsed = Duration.zero;
+    });
+
+    try {
+      final predictions = await _yamnetService.classify(path);
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _isRecording = false;
+        _predictions = predictions;
         _isBusy = false;
-        _recordedPath = path;
-        _elapsed = Duration.zero;
       });
-    } on RecordingTooShortException catch (error) {
-      _showError(error.toString());
-    } on PlatformException catch (error) {
-      _showError('Impossible d’arrêter le microphone : ${error.message}');
-    } on FileSystemException catch (error) {
-      _showError('Impossible de finaliser le fichier audio : ${error.message}');
-    } on StateError catch (error) {
+    } on UnsupportedError catch (error) {
+      _showError(error.message ?? error.toString());
+    } on YamnetException catch (error) {
       _showError(error.message);
+    } on FileSystemException catch (error) {
+      _showError('Impossible de lire le fichier audio : ${error.message}');
     } finally {
       if (mounted) {
         setState(() {
-          _isRecording = false;
           _isBusy = false;
         });
       }
@@ -147,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _recordingTimer?.cancel();
     unawaited(_audioRecorderService.dispose());
+    unawaited(_yamnetService.dispose());
     super.dispose();
   }
 
@@ -200,6 +228,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   'Enregistrement prêt',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+              ],
+              if (_predictions != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Résultats YAMNet',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                ..._predictions!.asMap().entries.map((entry) {
+                  final prediction = entry.value;
+                  return Text(
+                    '${entry.key + 1}. ${prediction.label} '
+                    '(${(prediction.confidence * 100).toStringAsFixed(1)} %)',
+                  );
+                }),
               ],
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
