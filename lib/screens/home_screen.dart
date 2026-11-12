@@ -29,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _errorMessage;
   String? _collectionStatus;
   List<YamnetPrediction>? _predictions;
+  int? _selectedPredictionIndex;
 
   Future<void> _toggleRecording() async {
     if (_isBusy) {
@@ -49,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _recordedPath = null;
       _predictions = null;
       _collectionStatus = null;
+      _selectedPredictionIndex = null;
     });
 
     try {
@@ -126,40 +128,65 @@ class _HomeScreenState extends State<HomeScreen> {
 
       setState(() {
         _predictions = predictions;
+        _selectedPredictionIndex = null;
       });
-
-      final topPrediction = predictions.first;
-      try {
-        await _collectionRepository.saveDiscovery(
-          name: topPrediction.label,
-          discoveredAt: DateTime.now(),
-          score: topPrediction.confidence,
-          audioPath: path,
-        );
-        if (mounted) {
-          setState(() {
-            _collectionStatus = 'Ajouté au Pokédex';
-          });
-        }
-      } on UnsupportedError {
-        if (mounted) {
-          setState(() {
-            _collectionStatus = 'Collection locale indisponible dans Chrome';
-          });
-        }
-      } on SoundCollectionException catch (error) {
-        if (mounted) {
-          setState(() {
-            _collectionStatus = error.message;
-          });
-        }
-      }
     } on UnsupportedError catch (error) {
       _showError(error.message ?? error.toString());
     } on YamnetException catch (error) {
       _showError(error.message);
     } on FileSystemException catch (error) {
       _showError('Impossible de lire le fichier audio : ${error.message}');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveSelectedPrediction() async {
+    final predictions = _predictions;
+    final selectedIndex = _selectedPredictionIndex;
+    final audioPath = _recordedPath;
+    if (_isBusy ||
+        predictions == null ||
+        selectedIndex == null ||
+        audioPath == null) {
+      return;
+    }
+
+    final selectedPrediction = predictions[selectedIndex];
+    setState(() {
+      _isBusy = true;
+      _collectionStatus = null;
+      _errorMessage = null;
+    });
+
+    try {
+      final savedSound = await _collectionRepository.saveDiscovery(
+        name: selectedPrediction.label,
+        discoveredAt: DateTime.now(),
+        score: selectedPrediction.confidence,
+        audioPath: audioPath,
+      );
+      if (mounted) {
+        setState(() {
+          _collectionStatus = 'Ajouté au Pokédex : ${savedSound.name}';
+        });
+      }
+    } on UnsupportedError {
+      if (mounted) {
+        setState(() {
+          _collectionStatus = 'Collection locale indisponible dans Chrome';
+        });
+      }
+    } on SoundCollectionException catch (error) {
+      if (mounted) {
+        setState(() {
+          _collectionStatus = error.message;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -281,17 +308,41 @@ class _HomeScreenState extends State<HomeScreen> {
               if (_predictions != null) ...[
                 const SizedBox(height: 16),
                 Text(
-                  'Résultats YAMNet',
+                  'Choisis le son à ajouter',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 8),
-                ..._predictions!.asMap().entries.map((entry) {
-                  final prediction = entry.value;
-                  return Text(
-                    '${entry.key + 1}. ${prediction.label} '
-                    '(${(prediction.confidence * 100).toStringAsFixed(1)} %)',
-                  );
-                }),
+                RadioGroup<int>(
+                  groupValue: _selectedPredictionIndex,
+                  onChanged: _isBusy
+                      ? (_) {}
+                      : (value) {
+                          setState(() {
+                            _selectedPredictionIndex = value;
+                            _collectionStatus = null;
+                          });
+                        },
+                  child: Column(
+                    children: _predictions!.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final prediction = entry.value;
+                      return RadioListTile<int>(
+                        value: index,
+                        enabled: !_isBusy,
+                        title: Text('${index + 1}. ${prediction.label}'),
+                        subtitle: Text(
+                          '${(prediction.confidence * 100).toStringAsFixed(1)} %',
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: _selectedPredictionIndex == null || _isBusy
+                      ? null
+                      : _saveSelectedPrediction,
+                  icon: const Icon(Icons.bookmark_add),
+                  label: const Text('Ajouter au Pokédex'),
+                ),
               ],
               if (_collectionStatus != null) ...[
                 const SizedBox(height: 8),
