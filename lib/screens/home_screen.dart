@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../services/audio_recorder_service.dart';
+import '../services/sound_collection_repository.dart';
 import '../services/yamnet_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -16,6 +17,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AudioRecorderService _audioRecorderService = AudioRecorderService();
+  final SoundCollectionRepository _collectionRepository =
+      SoundCollectionRepository();
   final YamnetService _yamnetService = YamnetService();
   Timer? _recordingTimer;
   Duration _elapsed = Duration.zero;
@@ -23,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isBusy = false;
   String? _recordedPath;
   String? _errorMessage;
+  String? _collectionStatus;
   List<YamnetPrediction>? _predictions;
 
   Future<void> _toggleRecording() async {
@@ -43,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _errorMessage = null;
       _recordedPath = null;
       _predictions = null;
+      _collectionStatus = null;
     });
 
     try {
@@ -120,8 +125,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
       setState(() {
         _predictions = predictions;
-        _isBusy = false;
       });
+
+      final topPrediction = predictions.first;
+      try {
+        await _collectionRepository.saveDiscovery(
+          name: topPrediction.label,
+          discoveredAt: DateTime.now(),
+          score: topPrediction.confidence,
+          audioPath: path,
+        );
+        if (mounted) {
+          setState(() {
+            _collectionStatus = 'Ajouté au Pokédex';
+          });
+        }
+      } on UnsupportedError {
+        if (mounted) {
+          setState(() {
+            _collectionStatus = 'Collection locale indisponible dans Chrome';
+          });
+        }
+      } on SoundCollectionException catch (error) {
+        if (mounted) {
+          setState(() {
+            _collectionStatus = error.message;
+          });
+        }
+      }
     } on UnsupportedError catch (error) {
       _showError(error.message ?? error.toString());
     } on YamnetException catch (error) {
@@ -175,6 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _recordingTimer?.cancel();
     unawaited(_audioRecorderService.dispose());
     unawaited(_yamnetService.dispose());
+    unawaited(_collectionRepository.dispose());
     super.dispose();
   }
 
@@ -243,6 +275,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     '(${(prediction.confidence * 100).toStringAsFixed(1)} %)',
                   );
                 }),
+              ],
+              if (_collectionStatus != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _collectionStatus!,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
               ],
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
