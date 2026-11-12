@@ -1,7 +1,8 @@
+import '../models/discovery_save_result.dart';
 import '../models/discovered_sound.dart';
 
 class SoundCollectionRepository {
-  Future<DiscoveredSound> saveDiscovery({
+  Future<DiscoverySaveResult> saveDiscovery({
     required String name,
     required DateTime discoveredAt,
     required double score,

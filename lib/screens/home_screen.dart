@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../services/audio_recorder_service.dart';
 import '../services/sound_collection_repository.dart';
 import '../services/yamnet_service.dart';
+import '../widgets/discovery_reveal_dialog.dart';
 import 'collection_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -164,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final savedSound = await _collectionRepository.saveDiscovery(
+      final saveResult = await _collectionRepository.saveDiscovery(
         name: selectedPrediction.label,
         discoveredAt: DateTime.now(),
         score: selectedPrediction.confidence,
@@ -172,8 +173,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (mounted) {
         setState(() {
-          _collectionStatus = 'Ajouté au Pokédex : ${savedSound.name}';
+          _collectionStatus = 'Ajouté au Pokédex : ${saveResult.sound.name}';
         });
+        if (saveResult.isNewDiscovery) {
+          await showDiscoveryRevealDialog(context, saveResult.sound);
+        }
       }
     } on UnsupportedError {
       if (mounted) {
