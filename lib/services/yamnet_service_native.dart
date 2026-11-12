@@ -14,6 +14,8 @@ class YamnetService {
   Interpreter? _interpreter;
   List<String>? _labels;
 
+  Future<void> initialize() => _ensureInitialized();
+
   Future<List<YamnetPrediction>> classify(String audioPath) async {
     await _ensureInitialized();
 

@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 
 import '../models/discovered_sound.dart';
+import 'sound_icon.dart';
 
 Future<void> showDiscoveryRevealDialog(
   BuildContext context,
@@ -44,6 +46,7 @@ class _DiscoveryRevealDialogState extends State<DiscoveryRevealDialog>
       parent: _controller,
       curve: const Interval(0, 0.45, curve: Curves.easeIn),
     );
+    HapticFeedback.mediumImpact();
     _controller.forward();
   }
 
@@ -73,7 +76,11 @@ class _DiscoveryRevealDialogState extends State<DiscoveryRevealDialog>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.graphic_eq, size: 72, color: colorScheme.primary),
+                SoundIcon(
+                  name: widget.sound.name,
+                  size: 72,
+                  color: colorScheme.primary,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   widget.sound.name,

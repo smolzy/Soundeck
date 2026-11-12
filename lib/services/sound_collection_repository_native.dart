@@ -33,6 +33,7 @@ class SoundCollectionRepository {
             'discovered_at': discoveredAt.toIso8601String(),
             'best_score': score,
             'audio_path': audioPath,
+            'synced': 0,
           });
           return DiscoverySaveResult(
             sound: DiscoveredSound(
@@ -51,7 +52,7 @@ class SoundCollectionRepository {
         if (isBetterScore) {
           await transaction.update(
             _tableName,
-            {'best_score': score, 'audio_path': audioPath},
+            {'best_score': score, 'audio_path': audioPath, 'synced': 0},
             where: 'id = ?',
             whereArgs: [existing.id],
           );
@@ -65,6 +66,7 @@ class SoundCollectionRepository {
                   discoveredAt: existing.discoveredAt,
                   bestScore: score,
                   audioPath: audioPath,
+                  synced: false,
                 )
               : existing,
           isNewDiscovery: false,
@@ -86,6 +88,22 @@ class SoundCollectionRepository {
     return rows.map(DiscoveredSound.fromMap).toList();
   }
 
+  Future<void> markSynced(Iterable<int> ids) async {
+    final values = ids.toList();
+    if (values.isEmpty) return;
+    final database = await _openDatabase();
+    await database.transaction((transaction) async {
+      for (final id in values) {
+        await transaction.update(
+          _tableName,
+          {'synced': 1},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    });
+  }
+
   Future<Database> _openDatabase() async {
     if (_database != null) {
       return _database!;
@@ -95,7 +113,7 @@ class SoundCollectionRepository {
     final databasePath = path.join(databasesPath, _databaseName);
     _database = await openDatabase(
       databasePath,
-      version: 1,
+      version: 2,
       onCreate: (database, version) async {
         await database.execute('''
           CREATE TABLE $_tableName (
@@ -103,9 +121,17 @@ class SoundCollectionRepository {
             name TEXT NOT NULL UNIQUE,
             discovered_at TEXT NOT NULL,
             best_score REAL NOT NULL,
-            audio_path TEXT NOT NULL
+            audio_path TEXT NOT NULL,
+            synced INTEGER NOT NULL DEFAULT 0
           )
         ''');
+      },
+      onUpgrade: (database, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await database.execute(
+            'ALTER TABLE $_tableName ADD COLUMN synced INTEGER NOT NULL DEFAULT 0',
+          );
+        }
       },
     );
     return _database!;

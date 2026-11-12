@@ -17,5 +17,7 @@ class SoundCollectionRepository {
 
   Future<List<DiscoveredSound>> getDiscoveredSounds() async => [];
 
+  Future<void> markSynced(Iterable<int> ids) async {}
+
   Future<void> dispose() async {}
 }

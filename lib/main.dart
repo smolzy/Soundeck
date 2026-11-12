@@ -1,8 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'screens/home_screen.dart';
+import 'services/supabase_config.dart';
+import 'screens/loading_screen.dart';
+import 'theme/sounddex_theme.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeSupabase();
   runApp(const SoundDexApp());
 }
 
@@ -13,11 +17,8 @@ class SoundDexApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SoundDex',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+      theme: sounddexTheme,
+      home: const LoadingScreen(),
     );
   }
 }

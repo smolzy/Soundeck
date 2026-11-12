@@ -4,14 +4,14 @@ import 'package:sounddex/models/discovered_sound.dart';
 import 'package:sounddex/main.dart';
 
 void main() {
-  testWidgets('affiche l’écran d’accueil SoundDex', (
+  testWidgets('affiche l’écran de chargement SoundDex', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const SoundDexApp());
 
     expect(find.text('SoundDex'), findsOneWidget);
-    expect(find.text('Découvre les sons autour de toi'), findsOneWidget);
-    expect(find.text('Écouter'), findsOneWidget);
+    expect(find.text('Le carnet des sons du monde'), findsOneWidget);
+    expect(find.textContaining('Chargement du modèle YAMNet'), findsOneWidget);
   });
 
   test('reconstruit une découverte depuis la base locale', () {

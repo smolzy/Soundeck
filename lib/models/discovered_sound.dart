@@ -5,6 +5,7 @@ class DiscoveredSound {
     required this.discoveredAt,
     required this.bestScore,
     required this.audioPath,
+    this.synced = false,
   });
 
   final int? id;
@@ -12,6 +13,7 @@ class DiscoveredSound {
   final DateTime discoveredAt;
   final double bestScore;
   final String audioPath;
+  final bool synced;
 
   factory DiscoveredSound.fromMap(Map<String, Object?> map) {
     return DiscoveredSound(
@@ -20,6 +22,7 @@ class DiscoveredSound {
       discoveredAt: DateTime.parse(map['discovered_at'] as String),
       bestScore: (map['best_score'] as num).toDouble(),
       audioPath: map['audio_path'] as String,
+      synced: (map['synced'] as num?)?.toInt() == 1,
     );
   }
 }

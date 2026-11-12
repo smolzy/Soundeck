@@ -1,0 +1,13 @@
+{
+  "default": "commun",
+  "categories": {
+    "Animaux": "peu_commun",
+    "Machines": "commun",
+    "Alertes": "rare",
+    "Nature": "rare",
+    "Musique": "legendaire",
+    "Voix": "commun",
+    "Maison": "commun",
+    "Autres": "commun"
+  }
+}

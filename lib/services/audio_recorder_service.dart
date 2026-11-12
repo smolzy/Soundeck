@@ -32,6 +32,13 @@ class AudioRecorderService {
 
   bool get isRecording => _startedAt != null;
 
+  Stream<double> get amplitudeStream => _recorder
+      .onAmplitudeChanged(const Duration(milliseconds: 100))
+      .map(
+        (amplitude) =>
+            ((amplitude.current + 60) / 60).clamp(0.0, 1.0).toDouble(),
+      );
+
   Future<void> start() async {
     if (isRecording) {
       throw StateError('Un enregistrement est déjà en cours.');

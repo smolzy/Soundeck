@@ -1,13 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../services/audio_recorder_service.dart';
 import '../services/sound_collection_repository.dart';
+import '../services/sync_service.dart';
 import '../services/yamnet_service.dart';
+import '../theme/sounddex_colors.dart';
 import '../widgets/discovery_reveal_dialog.dart';
+import '../widgets/sound_icon.dart';
+import '../widgets/sounddex_primitives.dart';
 import 'collection_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,7 +27,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final SoundCollectionRepository _collectionRepository =
       SoundCollectionRepository();
   final YamnetService _yamnetService = YamnetService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  final SyncService _syncService = SyncService();
   Timer? _recordingTimer;
+  StreamSubscription<double>? _amplitudeSubscription;
   Duration _elapsed = Duration.zero;
   bool _isRecording = false;
   bool _isBusy = false;
@@ -31,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _collectionStatus;
   List<YamnetPrediction>? _predictions;
   int? _selectedPredictionIndex;
+  List<double> _waveform = List<double>.filled(28, 0.08);
 
   Future<void> _toggleRecording() async {
     if (_isBusy) {
@@ -52,6 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _predictions = null;
       _collectionStatus = null;
       _selectedPredictionIndex = null;
+      _waveform = List<double>.filled(28, 0.08);
     });
 
     try {
@@ -64,6 +74,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _isRecording = true;
         _isBusy = false;
         _elapsed = Duration.zero;
+      });
+      _amplitudeSubscription = _audioRecorderService.amplitudeStream.listen((
+        level,
+      ) {
+        if (!mounted || !_isRecording) return;
+        setState(() {
+          _waveform = [..._waveform.skip(1), 0.08 + (level * 0.92)];
+        });
       });
       _recordingTimer = Timer.periodic(
         const Duration(milliseconds: 100),
@@ -89,6 +107,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _stopRecording() async {
     _recordingTimer?.cancel();
     _recordingTimer = null;
+    await _amplitudeSubscription?.cancel();
+    _amplitudeSubscription = null;
     setState(() {
       _isBusy = true;
     });
@@ -128,8 +148,15 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       setState(() {
-        _predictions = predictions;
-        _selectedPredictionIndex = null;
+        final usablePredictions = predictions
+            .where((prediction) => prediction.confidence >= 0.05)
+            .toList();
+        if (usablePredictions.isEmpty) {
+          _showError('Aucun résultat fiable au-dessus de 5 %.');
+          return;
+        }
+        _predictions = usablePredictions;
+        _selectedPredictionIndex = 0;
       });
     } on UnsupportedError catch (error) {
       _showError(error.message ?? error.toString());
@@ -178,6 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (saveResult.isNewDiscovery) {
           await showDiscoveryRevealDialog(context, saveResult.sound);
         }
+        unawaited(_syncService.syncPending());
       }
     } on UnsupportedError {
       if (mounted) {
@@ -228,6 +256,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _replayRecording() async {
+    final path = _recordedPath;
+    if (path == null || _isBusy) return;
+    try {
+      await _audioPlayer.stop();
+      await _audioPlayer.play(DeviceFileSource(path));
+    } on Exception catch (error) {
+      if (mounted) {
+        _showError('Impossible de lire l’enregistrement : $error');
+      }
+    }
+  }
+
   String _formatDuration(Duration duration) {
     final seconds = duration.inSeconds.toString().padLeft(2, '0');
     return '00:$seconds';
@@ -236,22 +277,20 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _recordingTimer?.cancel();
+    unawaited(_amplitudeSubscription?.cancel());
     unawaited(_audioRecorderService.dispose());
     unawaited(_yamnetService.dispose());
     unawaited(_collectionRepository.dispose());
+    unawaited(_audioPlayer.dispose());
+    unawaited(_syncService.dispose());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final progress =
-        _elapsed.inMilliseconds /
-        AudioRecorderService.maxDuration.inMilliseconds;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SoundDex'),
-        centerTitle: true,
+        title: Text(_predictions == null ? 'Écouter' : 'Qu’as-tu entendu ?'),
         actions: [
           IconButton(
             onPressed: () {
@@ -266,107 +305,168 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.graphic_eq,
-                size: 96,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                _isRecording
-                    ? 'Écoute le son autour de toi'
-                    : 'Découvre les sons autour de toi',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 32),
-              if (_isRecording) ...[
-                Text(
-                  _formatDuration(_elapsed),
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 12),
-                LinearProgressIndicator(
-                  value: progress.clamp(0.0, 1.0).toDouble(),
-                ),
-                const SizedBox(height: 24),
-              ],
-              FilledButton.icon(
-                onPressed: _isBusy ? null : _toggleRecording,
-                icon: Icon(_isRecording ? Icons.stop : Icons.mic),
-                label: Text(_isRecording ? 'Arrêter' : 'Écouter'),
-              ),
-              if (_recordedPath != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Enregistrement prêt',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-              if (_predictions != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Choisis le son à ajouter',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                RadioGroup<int>(
-                  groupValue: _selectedPredictionIndex,
-                  onChanged: _isBusy
-                      ? (_) {}
-                      : (value) {
-                          setState(() {
-                            _selectedPredictionIndex = value;
-                            _collectionStatus = null;
-                          });
-                        },
-                  child: Column(
-                    children: _predictions!.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final prediction = entry.value;
-                      return RadioListTile<int>(
-                        value: index,
-                        enabled: !_isBusy,
-                        title: Text('${index + 1}. ${prediction.label}'),
-                        subtitle: Text(
-                          '${(prediction.confidence * 100).toStringAsFixed(1)} %',
-                        ),
-                      );
-                    }).toList(),
+      body: _predictions == null
+          ? _buildListeningView(context)
+          : _buildChoiceView(context),
+    );
+  }
+
+  Widget _buildListeningView(BuildContext context) {
+    final progress =
+        _elapsed.inMilliseconds /
+        AudioRecorderService.maxDuration.inMilliseconds;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Rapproche-toi du son',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: 190,
+              height: 190,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  for (final size in [190.0, 160.0])
+                    Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: SoundDexColors.line),
+                      ),
+                    ),
+                  IconButton(
+                    onPressed: _isBusy ? null : _toggleRecording,
+                    style: IconButton.styleFrom(
+                      backgroundColor: SoundDexColors.terracotta,
+                      foregroundColor: SoundDexColors.fiche,
+                      fixedSize: const Size(96, 96),
+                    ),
+                    icon: SoundIcon(
+                      name: _isRecording ? 'inconnu' : 'micro',
+                      size: 42,
+                      color: SoundDexColors.fiche,
+                    ),
                   ),
-                ),
-                FilledButton.icon(
-                  onPressed: _selectedPredictionIndex == null || _isBusy
-                      ? null
-                      : _saveSelectedPrediction,
-                  icon: const Icon(Icons.bookmark_add),
-                  label: const Text('Ajouter au Pokédex'),
-                ),
-              ],
-              if (_collectionStatus != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _collectionStatus!,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              height: 52,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: _waveform.map((value) {
+                  return Container(
+                    width: 4,
+                    height: 10 + value * 40,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    color: _isRecording
+                        ? SoundDexColors.terracotta
+                        : SoundDexColors.locked,
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${_formatDuration(_elapsed)} / 00:05',
+              style: const TextStyle(
+                fontFamily: 'IBMPlexMono',
+                color: SoundDexColors.warmGray,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ThinProgressBar(value: progress),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 20),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
-          ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChoiceView(BuildContext context) {
+    final predictions = _predictions!;
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        TextButton.icon(
+          onPressed: _replayRecording,
+          icon: const SoundIcon(name: 'lecture', size: 18),
+          label: const Text('Réécouter l’enregistrement'),
+        ),
+        const SizedBox(height: 16),
+        ...predictions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final prediction = entry.value;
+          final selected = index == _selectedPredictionIndex;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: GestureDetector(
+              onTap: _isBusy
+                  ? null
+                  : () => setState(() {
+                      _selectedPredictionIndex = index;
+                      _collectionStatus = null;
+                    }),
+              child: SpecimenCard(
+                isRare: selected,
+                child: Row(
+                  children: [
+                    SoundIcon(name: prediction.label, size: 30),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            prediction.label,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          ThinProgressBar(value: prediction.confidence),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${(prediction.confidence * 100).toStringAsFixed(0)} %',
+                      style: const TextStyle(fontFamily: 'IBMPlexMono'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        const Text('Aucun ne correspond ? Réessaie.'),
+        const SizedBox(height: 20),
+        PrimaryButton(
+          label: 'Ajouter au carnet',
+          onPressed: _selectedPredictionIndex == null || _isBusy
+              ? null
+              : _saveSelectedPrediction,
+        ),
+        if (_collectionStatus != null) ...[
+          const SizedBox(height: 12),
+          Text(_collectionStatus!, textAlign: TextAlign.center),
+        ],
+      ],
     );
   }
 }
