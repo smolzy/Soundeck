@@ -14,5 +14,7 @@ class SoundCollectionRepository {
     );
   }
 
+  Future<List<DiscoveredSound>> getDiscoveredSounds() async => [];
+
   Future<void> dispose() async {}
 }

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../services/audio_recorder_service.dart';
 import '../services/sound_collection_repository.dart';
 import '../services/yamnet_service.dart';
+import 'collection_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -217,7 +218,23 @@ class _HomeScreenState extends State<HomeScreen> {
         AudioRecorderService.maxDuration.inMilliseconds;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('SoundDex'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('SoundDex'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const CollectionScreen(),
+                ),
+              );
+            },
+            tooltip: 'Ouvrir le Pokédex',
+            icon: const Icon(Icons.collections_bookmark),
+          ),
+        ],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),

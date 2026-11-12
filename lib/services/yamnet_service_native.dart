@@ -5,11 +5,11 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../models/yamnet_prediction.dart';
 import 'yamnet_errors.dart';
+import 'yamnet_class_catalog.dart';
 
 class YamnetService {
   static const _modelAsset = 'assets/models/yamnet.tflite';
-  static const _classMapAsset = 'assets/models/yamnet_class_map.csv';
-  static const _classCount = 521;
+  static const _classCount = YamnetClassCatalog.classCount;
 
   Interpreter? _interpreter;
   List<String>? _labels;
@@ -82,7 +82,7 @@ class YamnetService {
 
     try {
       _interpreter ??= await Interpreter.fromAsset(_modelAsset);
-      _labels ??= _parseClassMap(await rootBundle.loadString(_classMapAsset));
+      _labels ??= await YamnetClassCatalog().loadLabels();
     } on PlatformException catch (error) {
       throw YamnetException(
         'Impossible de charger le modèle YAMNet : ${error.message}',
@@ -90,62 +90,6 @@ class YamnetService {
     } on ArgumentError catch (error) {
       throw YamnetException('Modèle YAMNet invalide : $error');
     }
-  }
-
-  List<String> _parseClassMap(String csv) {
-    final labelsByIndex = <int, String>{};
-    for (final line in csv.split(RegExp(r'\r?\n')).skip(1)) {
-      if (line.trim().isEmpty) {
-        continue;
-      }
-
-      final fields = _parseCsvLine(line);
-      if (fields.length < 3) {
-        throw const YamnetException(
-          'Le fichier yamnet_class_map.csv est invalide.',
-        );
-      }
-      final index = int.tryParse(fields[0]);
-      if (index == null || index < 0 || index >= _classCount) {
-        throw const YamnetException(
-          'Le fichier yamnet_class_map.csv contient un index invalide.',
-        );
-      }
-      labelsByIndex[index] = fields[2];
-    }
-
-    if (labelsByIndex.length != _classCount) {
-      throw const YamnetException(
-        'Le fichier yamnet_class_map.csv ne contient pas 521 classes.',
-      );
-    }
-
-    return List<String>.generate(_classCount, (index) => labelsByIndex[index]!);
-  }
-
-  List<String> _parseCsvLine(String line) {
-    final fields = <String>[];
-    final field = StringBuffer();
-    var quoted = false;
-
-    for (var index = 0; index < line.length; index++) {
-      final character = line[index];
-      if (character == '"') {
-        if (quoted && index + 1 < line.length && line[index + 1] == '"') {
-          field.write('"');
-          index++;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (character == ',' && !quoted) {
-        fields.add(field.toString());
-        field.clear();
-      } else {
-        field.write(character);
-      }
-    }
-    fields.add(field.toString());
-    return fields;
   }
 
   Future<List<double>> _readWavSamples(String path) async {

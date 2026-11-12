@@ -63,6 +63,15 @@ class SoundCollectionRepository {
     });
   }
 
+  Future<List<DiscoveredSound>> getDiscoveredSounds() async {
+    final database = await _openDatabase();
+    final rows = await database.query(
+      _tableName,
+      orderBy: 'name COLLATE NOCASE ASC',
+    );
+    return rows.map(DiscoveredSound.fromMap).toList();
+  }
+
   Future<Database> _openDatabase() async {
     if (_database != null) {
       return _database!;
