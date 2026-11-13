@@ -20,4 +20,14 @@ class OnboardingPreferences {
   Future<void> markSyncOffered(String userId) {
     return _preferences.setBool('$_syncOfferPrefix$userId', true);
   }
+
+  Future<List<String>> hiddenUserIds() async {
+    return await _preferences.getStringList('hidden_users') ?? [];
+  }
+
+  Future<void> hideUser(String userId) async {
+    final users = await hiddenUserIds();
+    if (!users.contains(userId)) users.add(userId);
+    await _preferences.setStringList('hidden_users', users);
+  }
 }

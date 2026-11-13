@@ -90,13 +90,13 @@ class GhostButton extends StatelessWidget {
 
 class ThinProgressBar extends StatelessWidget {
   const ThinProgressBar({required this.value, super.key});
-  final double value;
+  final double? value;
 
   @override
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.zero,
     child: LinearProgressIndicator(
-      value: value.clamp(0, 1),
+      value: value?.clamp(0, 1),
       minHeight: 3,
       backgroundColor: SoundDexColors.line,
       color: SoundDexColors.terracotta,

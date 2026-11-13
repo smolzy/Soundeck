@@ -8,7 +8,9 @@ import '../services/sync_service.dart';
 import '../theme/sounddex_colors.dart';
 import '../widgets/sound_icon.dart';
 import 'collection_screen.dart';
+import 'direct_screen.dart';
 import 'home_screen.dart';
+import 'leaderboard_screen.dart';
 import 'placeholder_screen.dart';
 
 class AppShell extends StatefulWidget {
@@ -27,9 +29,9 @@ class _AppShellState extends State<AppShell> {
 
   List<Widget> get _screens => [
     CollectionScreen(key: ValueKey(_collectionVersion)),
-    const PlaceholderScreen(title: 'Classement'),
+    const LeaderboardScreen(),
     const HomeScreen(),
-    const PlaceholderScreen(title: 'Direct'),
+    const DirectScreen(),
     const PlaceholderScreen(title: 'Profil'),
   ];
 
